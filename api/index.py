@@ -3,7 +3,7 @@ import requests
 import os
 
 # Initialize the Flask app
-app = Flask(___name___)
+app = Flask(__name__)
 
 # --- Helper function to get CIK ---
 def get_cik_for_ticker(ticker_symbol: str):
@@ -68,5 +68,6 @@ def get_wikidata_facts_route():
     # For now, we'll return a placeholder
 
     return jsonify({"message": f"Wikidata endpoint for {company_name} is ready."})
+
 
 
