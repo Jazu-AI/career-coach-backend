@@ -1,4 +1,4 @@
-from flask import flask, request, jsonify
+from flask import Flask, request, jsonify
 import requests
 import os
 
@@ -68,4 +68,5 @@ def get_wikidata_facts_route():
     # For now, we'll return a placeholder
 
     return jsonify({"message": f"Wikidata endpoint for {company_name} is ready."})
+
 
