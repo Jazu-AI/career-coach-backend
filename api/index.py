@@ -5,8 +5,14 @@ def get_sec_financials(ticker):
         import json
         
         # Get company CIK from SEC tickers file
+       def get_sec_financials(ticker):
+    try:
+        import requests
+        import json
+        
+        # Use SEC's official company tickers endpoint
         tickers_url = "https://www.sec.gov/files/company_tickers.json"
-        headers = {"User-Agent": "JaZu Career Coach (contact@jazu.ai)"}
+        headers = {"User-Agent": "JaZu Career Coach API (contact@jazu.ai)"}
         
         response = requests.get(tickers_url, headers=headers)
         if response.status_code == 200:
@@ -20,21 +26,27 @@ def get_sec_financials(ticker):
                     break
             
             if cik:
-                # Get financial data using CIK
+                # Get basic company facts
                 facts_url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
                 facts_response = requests.get(facts_url, headers=headers)
                 
                 if facts_response.status_code == 200:
                     data = facts_response.json()
+                    
+                    # Extract key financial metrics if available
+                    facts = data.get('facts', {})
+                    company_name = data.get('entityName', ticker)
+                    
                     return {
                         "ticker": ticker,
+                        "company_name": company_name,
                         "cik": cik,
-                        "company_name": data.get("entityName", ""),
-                        "financial_data": "Retrieved successfully",
-                        "message": f"Financial data found for {ticker}"
+                        "status": "success",
+                        "message": f"Financial data retrieved for {company_name}",
+                        "data_available": len(facts) > 0
                     }
             
-        return {"error": f"CIK not found for ticker {ticker}", "ticker": ticker}
+        return {"error": f"No SEC data found for ticker {ticker}", "ticker": ticker}
         
     except Exception as e:
-        return {"error": str(e), "ticker": ticker}
+        return {"error": f"API error: {str(e)}", "ticker": ticker}
