@@ -1,73 +1,40 @@
-from flask import Flask, request, jsonify
-import requests
-import os
-
-# Initialize the Flask app
-app = Flask(__name__)
-
-# --- Helper function to get CIK ---
-def get_cik_for_ticker(ticker_symbol: str):
-    # This is the first line to change
-    headers = {'User-Agent': "jazu-ai"} # <--- CHANGE MADE HERE
+def get_sec_financials(ticker):
     try:
-        response = requests.get("https://www.sec.gov/files/company_tickers.json", headers=headers)
-        response.raise_for_status()
-        company_data = response.json()
-        for key, value in company_data.items():
-            if value['ticker'] == ticker_symbol.upper():
-                return str(value['cik_str']).zfill(10)
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching CIK list: {e}")
-    return None
-
-# --- Route for SEC Financials ---
-@app.route('/get-sec-financials', methods=['GET'])
-def get_sec_financials_route():
-    ticker = request.args.get('ticker')
-    if not ticker:
-        return jsonify({"error": "Ticker parameter is missing"}), 400
-    
-    cik = get_cik_for_ticker(ticker)
-    if not cik:
-        return jsonify({"error": f"CIK not found for ticker: {ticker}"}), 404
-    
-    facts_url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
-    # This is the second line to change
-    headers = {'User-Agent': "jazu-ai"} # <--- CHANGE MADE HERE
-    try:
-        response = requests.get(facts_url, headers=headers)
-        response.raise_for_status()
-        return jsonify(response.json())
-    except requests.exceptions.RequestException as e:
-        return jsonify({"error": f"Failed to fetch SEC data: {e}"}), 500
-
-# --- Route for News ---
-@app.route('/get-news', methods=['GET'])
-def get_news_route():
-    company_name = request.args.get('company_name')
-    NEWS_API_KEY = os.environ.get("NEWS_API_KEY")
-    
-    if not NEWS_API_KEY:
-        return jsonify({"error": "News API key is not configured"}), 500
-    if not company_name:
-        return jsonify({"error": "Company name parameter is missing"}), 400
+        # Alternative approach: Use company tickers JSON from SEC
+        import requests
+        import json
         
-    news_url = f"https://newsapi.org/v2/everything?q={company_name}&sortBy=relevancy&language=en&apiKey={NEWS_API_KEY}"
-    try:
-        response = requests.get(news_url)
-        response.raise_for_status()
-        return jsonify(response.json())
-    except requests.exceptions.RequestException as e:
-        return jsonify({"error": f"Failed to fetch news data: {e}"}), 500
-
-# --- Route for Wikidata (you would build this out similarly) ---
-@app.route('/get-wikidata-facts', methods=['GET'])
-def get_wikidata_facts_route():
-    # You would add the Python logic for the Wikidata query here
-    company_name = request.args.get('company_name')
-    # For now, we'll return a placeholder
-
-    return jsonify({"message": f"Wikidata endpoint for {company_name} is ready."})
-
-
-
+        # Get company CIK from SEC tickers file
+        tickers_url = "https://www.sec.gov/files/company_tickers.json"
+        headers = {"User-Agent": "JaZu Career Coach (contact@jazu.ai)"}
+        
+        response = requests.get(tickers_url, headers=headers)
+        if response.status_code == 200:
+            companies = response.json()
+            
+            # Find CIK for the ticker
+            cik = None
+            for company_data in companies.values():
+                if company_data.get('ticker', '').upper() == ticker.upper():
+                    cik = str(company_data['cik_str']).zfill(10)
+                    break
+            
+            if cik:
+                # Get financial data using CIK
+                facts_url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
+                facts_response = requests.get(facts_url, headers=headers)
+                
+                if facts_response.status_code == 200:
+                    data = facts_response.json()
+                    return {
+                        "ticker": ticker,
+                        "cik": cik,
+                        "company_name": data.get("entityName", ""),
+                        "financial_data": "Retrieved successfully",
+                        "message": f"Financial data found for {ticker}"
+                    }
+            
+        return {"error": f"CIK not found for ticker {ticker}", "ticker": ticker}
+        
+    except Exception as e:
+        return {"error": str(e), "ticker": ticker}
