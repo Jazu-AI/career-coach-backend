@@ -1,6 +1,11 @@
 from http.server import BaseHTTPRequestHandler
 import json
 import urllib.parse
+import os
+import openai
+from pinecone import Pinecone
+import uuid
+from datetime import datetime
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -65,6 +70,25 @@ class handler(BaseHTTPRequestHandler):
         # Send JSON response
         self.wfile.write(json.dumps(result).encode())
     
+    def init_pinecone(self):
+        try:
+            pc = Pinecone(api_key=os.environ.get('PINECONE_API_KEY'))
+            index_name = os.environ.get('PINECONE_INDEX_NAME', 'coach-prod')
+            return pc.Index(index_name)
+        except Exception as e:
+            return None
+
+    def get_embedding(self, text):
+        try:
+            client = openai.OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
+            response = client.embeddings.create(
+                model="text-embedding-ada-002",
+                input=text
+            )
+            return response.data[0].embedding
+        except Exception as e:
+            return None
+    
     def get_wikidata_facts(self, company_name):
         if not company_name:
             return {"error": "company_name parameter required"}
@@ -105,12 +129,42 @@ class handler(BaseHTTPRequestHandler):
         if not user_id or not text:
             return {"error": "userId and text are required"}
         
-        # TODO: Implement Pinecone storage
-        return {
-            "ok": True,
-            "namespace": namespace,
-            "upsertedCount": 1
-        }
+        try:
+            # Generate embedding
+            embedding = self.get_embedding(text)
+            if not embedding:
+                return {"error": "Failed to generate embedding"}
+            
+            # Initialize Pinecone
+            index = self.init_pinecone()
+            if not index:
+                return {"error": "Failed to connect to Pinecone"}
+            
+            # Create vector record
+            vector_id = f"{user_id}_{uuid.uuid4()}"
+            vector_data = {
+                "id": vector_id,
+                "values": embedding,
+                "metadata": {
+                    "userId": user_id,
+                    "text": text,
+                    "tags": tags,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    **metadata
+                }
+            }
+            
+            # Store in Pinecone
+            index.upsert([vector_data], namespace=namespace)
+            
+            return {
+                "ok": True,
+                "namespace": namespace,
+                "upsertedCount": 1
+            }
+        
+        except Exception as e:
+            return {"error": f"Storage failed: {str(e)}"}
     
     def search_memory(self, body):
         user_id = body.get('userId')
@@ -121,11 +175,42 @@ class handler(BaseHTTPRequestHandler):
         if not user_id or not query:
             return {"error": "userId and query are required"}
         
-        # TODO: Implement Pinecone search
-        return {
-            "ok": True,
-            "matches": []
-        }
+        try:
+            # Generate query embedding
+            query_embedding = self.get_embedding(query)
+            if not query_embedding:
+                return {"error": "Failed to generate query embedding"}
+            
+            # Initialize Pinecone
+            index = self.init_pinecone()
+            if not index:
+                return {"error": "Failed to connect to Pinecone"}
+            
+            # Search vectors
+            results = index.query(
+                vector=query_embedding,
+                top_k=top_k,
+                namespace=namespace,
+                filter={"userId": user_id},
+                include_metadata=True
+            )
+            
+            # Format response
+            matches = []
+            for match in results.matches:
+                matches.append({
+                    "id": match.id,
+                    "score": float(match.score),
+                    "metadata": match.metadata
+                })
+            
+            return {
+                "ok": True,
+                "matches": matches
+            }
+        
+        except Exception as e:
+            return {"error": f"Search failed: {str(e)}"}
     
     def update_memory(self, body):
         user_id = body.get('userId')
@@ -134,7 +219,7 @@ class handler(BaseHTTPRequestHandler):
         if not user_id or not memory_id:
             return {"error": "userId and id are required"}
         
-        # TODO: Implement Pinecone update
+        # For now, return placeholder - update functionality can be added later
         return {
             "ok": True,
             "namespace": body.get('namespace', 'default'),
